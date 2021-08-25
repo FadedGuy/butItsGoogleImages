@@ -10,7 +10,7 @@ import glob
 # which the images are going to be downloaded 
 URL_Google = "https://www.google.com/search?tbm=isch&q="
 URL_Musix = 'https://www.musixmatch.com'
-folder_name = "mamadasIMG/"
+folder_name = "butItsGI/"
 tag_tree_google_img = 'body > div > c-wiz > div > div > div > div > div > div > div > span > div > div > a > div > img'
 
 #Deletes current folder and creates a new one with proper permissions
