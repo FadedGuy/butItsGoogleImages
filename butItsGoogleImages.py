@@ -13,7 +13,7 @@ URL_Musix = 'https://www.musixmatch.com'
 folder_name = "butItsGI/"
 tag_tree_google_img = 'body > div > c-wiz > div > div > div > div > div > div > div > span > div > div > a > div > img'
 
-#Deletes current folder and creates a new one with proper permissions
+#Deletes folder if it exists to empty contents and creates a new one with all permissions
 def check_directory(f_name):
     if(os.path.exists(f_name)):
         shutil.rmtree(f_name)
@@ -44,6 +44,7 @@ def search_and_download(location, url, word, tags, cnt_img):
         r_img.raw.decode_content = True 
         with open(location, 'wb') as f:
             shutil.copyfileobj(r_img.raw, f)
+            #Could add image directly so it doesn't process twice but would need speech-text beforehand at 60fps (min)
     except:
         print(f"Unable to download image")
      
@@ -55,7 +56,7 @@ def search_lyric(song, url):
     print(f"Searching lyrics {search_url}")
     lyric_results = r.html.find(".showArtist.showCoverart")
     dict_lyrics = []
-    for res in lyric_results[1:]:
+    for res in lyric_results[1:]: #Starts from the second song since the first and second are the same
         text = res.text
         info = {'song' : text[:text.index('\n')], 'artist' : text[text.index('\n')+1:]}
         dict_lyrics.append(info)
@@ -84,11 +85,12 @@ def get_lyric(url):
     r = session.get(url)
     print(f"Fetchign lyrics for {url}")
     lyrics = r.html.find('p.mxm-lyrics__content')
+    #Could use trim to auto erase punctuation and only loop for spaces (split lines might work)
     words=[]
     for lyric in lyrics:
         word = ""
         for c in lyric.text:
-            if((c != '!' or c != '.' or c != ',') and c != ' '):
+            if((c != '!' or c != '.' or c != ',' or c != '\n' or c!= '?') and c != ' '):
                 word+=c
             elif c == ' ':
                 words.append(word)
@@ -120,6 +122,7 @@ def create_video(folder_path, output_name):
 
 def main():
     check_directory(folder_name)
+    #check for internet connection
     song_name = input("Song name: ")
     lyrics_complete = get_lyric(search_lyric(song_name, URL_Musix))
     print(lyrics_complete)
@@ -129,7 +132,7 @@ def main():
         print(f"[{count}/{total_count}]", end=" ")
         count+=1
         search_and_download(folder_name, URL_Google, word, tag_tree_google_img, count)
-    create_video(folder_name, input("Como quieres que se llame el archivo de salida (sin extension): "))
+    create_video(folder_name, input("File name (without extension): "))
 
 
 if __name__ == "__main__":
