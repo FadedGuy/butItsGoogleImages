@@ -1,6 +1,5 @@
 import requests
 import os
-import sys
 import youtube_dl
 from requests_html import HTMLSession
 import shutil
@@ -8,7 +7,7 @@ import random
 import cv2
 import glob
 import ffmpeg
-from pydub import AudioSegment, audio_segment
+from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 import gc
 
@@ -90,6 +89,19 @@ def download_audio_song(search, base_url):
     print(f'Searching audio for: {search} in {url}')
     ses = HTMLSession()
     r = ses.get(url)
+
+    #Optional if you want to choose the music video rather than getting the highest valued, assumes entered input is correct
+    link_list = []
+    for link in r.html.links:
+        if(link.startswith('https://www.youtube.com')):
+            link_list.append(link)
+    i = 0
+    for link in link_list:
+        print(f"[{i}] {link}")
+        i+=1
+    sel = int(input("Selection: "))
+    return link_list[sel]
+
     for link in r.html.links:
         if(link.startswith('https://www.youtube.com')):
             return link
