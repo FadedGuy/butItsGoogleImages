@@ -1,23 +1,35 @@
 import requests
 import os
+import youtube_dl
 from requests_html import HTMLSession
 import shutil
 import random
 import cv2
 import glob
+import asyncio
 
 # Variables used to determine the prefix-url to search and the folder name in 
 # which the images are going to be downloaded 
 URL_Google = "https://www.google.com/search?tbm=isch&q="
 URL_Musix = 'https://www.musixmatch.com'
+URL_Youtube_Google = 'https://www.google.com/search?q='
 folder_name = "butItsGI/"
 tag_tree_google_img = 'body > div > c-wiz > div > div > div > div > div > div > div > span > div > div > a > div > img'
 
+#Options for audio download, change 'outmpl' if you want to change the path or name of output file
+ydl_opts = {
+    'format': 'bestaudio/best',
+    'outtmpl' : 'audio.wav'
+}
+
 #Deletes folder if it exists to empty contents and creates a new one with all permissions
-def check_directory(f_name):
+def check_files(f_name, download_name):
     if(os.path.exists(f_name)):
         shutil.rmtree(f_name)
     os.mkdir(f_name, 0o7777)
+
+    if(os.path.exists(download_name)):
+        os.remove(download_name)
 
 #Searched and downloades the word passed and saves it as IMG_XXXX.jpg
 def search_and_download(location, url, word, tags, cnt_img):
@@ -49,7 +61,7 @@ def search_and_download(location, url, word, tags, cnt_img):
         print(f"Unable to download image")
      
 #Return the url for the lyrics of selected song
-def search_lyric(song, url):
+def search_lyric(song, url, url_yt, opts_yt):
     search_url = url+"/search/" + song
     session = HTMLSession()
     r = session.get(search_url)
@@ -61,23 +73,42 @@ def search_lyric(song, url):
         info = {'song' : text[:text.index('\n')], 'artist' : text[text.index('\n')+1:]}
         dict_lyrics.append(info)
 
-    return url + lyric_results[selectSong(dict_lyrics)+1].find('a.title',first=True).attrs['href']
+    return url + lyric_results[selectSong(dict_lyrics, url_yt, opts_yt)+1].find('a.title',first=True).attrs['href']
 
-#Menu to choose top songs results and returns said selection
-def selectSong(list_lyrics):
+#Searches for the song and downloads the first youtube result
+def download_audio_song(search, base_url):
+    url = base_url + search
+    print(f'Searching audio for: {search} in {url}')
+    ses = HTMLSession()
+    r = ses.get(url)
+    for link in r.html.links:
+        if(link.startswith('https://www.youtube.com')):
+            return link
+    return print(f"Unable to audio for {search}")
+    
+
+#Menu to choose top songs results, selected result is searched for its audio download and selection is returned
+def selectSong(list_lyrics, url_yt, opts_yt):
     cnt = 0
     for val in list_lyrics:
         print(f"[{cnt}] Song: {val['song']} by {val['artist']}")
         cnt+=1
     choice = int(input("Select the song: "))
-    try:
-        if choice >= 0 and choice < len(list_lyrics):
-            return choice
-        else:
-            raise
-    except:
+    if choice >= 0 and choice < len(list_lyrics):
+        #Download works in mysterious ways, so don't try passing it a standalone string, it's beyond me why this happends
+        #Spend about 30 minutes wondering why, if you know, let me know
+        href = []
+        href.append(download_audio_song(list_lyrics[choice]['song'] + " " + list_lyrics[choice]['artist'], url_yt))
+        try:
+            youtube_dl.YoutubeDL(opts_yt).download(href)
+            
+        except:
+            print("Unable to download audio for song")
+        return choice
+            
+    else:
         print("Invalid selection")
-        selectSong(list_lyrics)
+        selectSong(list_lyrics, url_yt, opts_yt)
 
 #Parses and returns the lyrics in an ordered array
 def get_lyric(url):
@@ -121,11 +152,10 @@ def create_video(folder_path, output_name):
     print(f"Video exported to {file_name}")
 
 def main():
-    check_directory(folder_name)
-    #check for internet connection
+    check_files(folder_name, ydl_opts['outtmpl'])
+    #check for internet connection function later
     song_name = input("Song name: ")
-    lyrics_complete = get_lyric(search_lyric(song_name, URL_Musix))
-    print(lyrics_complete)
+    lyrics_complete = get_lyric(search_lyric(song_name, URL_Musix, URL_Youtube_Google, ydl_opts))
     count = 1
     total_count = len(lyrics_complete)
     for word in lyrics_complete:
@@ -133,7 +163,6 @@ def main():
         count+=1
         search_and_download(folder_name, URL_Google, word, tag_tree_google_img, count)
     create_video(folder_name, input("File name (without extension): "))
-
 
 if __name__ == "__main__":
     main()
