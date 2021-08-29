@@ -1,12 +1,16 @@
 import requests
 import os
+import sys
 import youtube_dl
 from requests_html import HTMLSession
 import shutil
 import random
 import cv2
 import glob
-import asyncio
+import ffmpeg
+from pydub import AudioSegment, audio_segment
+from pydub.silence import detect_nonsilent
+import gc
 
 # Variables used to determine the prefix-url to search and the folder name in 
 # which the images are going to be downloaded 
@@ -14,6 +18,7 @@ URL_Google = "https://www.google.com/search?tbm=isch&q="
 URL_Musix = 'https://www.musixmatch.com'
 URL_Youtube_Google = 'https://www.google.com/search?q='
 folder_name = "butItsGI/"
+keyword_out_file = "Full"
 tag_tree_google_img = 'body > div > c-wiz > div > div > div > div > div > div > div > span > div > div > a > div > img'
 
 #Options for audio download, change 'outmpl' if you want to change the path or name of output file
@@ -23,13 +28,17 @@ ydl_opts = {
 }
 
 #Deletes folder if it exists to empty contents and creates a new one with all permissions
-def check_files(f_name, download_name):
+def check_files(f_name, download_name, video_name, final_vid_name):
     if(os.path.exists(f_name)):
         shutil.rmtree(f_name)
     os.mkdir(f_name, 0o7777)
 
     if(os.path.exists(download_name)):
         os.remove(download_name)
+    if(os.path.exists(video_name)):
+        os.remove(video_name)
+    if(os.path.exists(final_vid_name)):
+        os.remove(final_vid_name)
 
 #Searched and downloades the word passed and saves it as IMG_XXXX.jpg
 def search_and_download(location, url, word, tags, cnt_img):
@@ -114,7 +123,7 @@ def selectSong(list_lyrics, url_yt, opts_yt):
 def get_lyric(url):
     session = HTMLSession()
     r = session.get(url)
-    print(f"Fetchign lyrics for {url}")
+    print(f"Fetching lyrics for {url}")
     lyrics = r.html.find('p.mxm-lyrics__content')
     #Could use trim to auto erase punctuation and only loop for spaces (split lines might work)
     words=[]
@@ -126,43 +135,89 @@ def get_lyric(url):
             elif c == ' ':
                 words.append(word)
                 word = ""
-
+    print("Lyrics succesfully fetched")
     return words
 
-#Creation of the video using the cv2 library and exporting it in mp4 format
-def create_video(folder_path, output_name):
-    base_dir = os.path.realpath(folder_path)
-    file_name = output_name+'.mp4'
-    print(base_dir)
+#Function for non_silent to normalize all audio 
+def match_target_amplitude(sound, target_dBFS):
+    change_in_dBFS = target_dBFS - sound.dBFS
+    return sound.apply_gain(change_in_dBFS)
 
+#Processes when audio is within dB range, timestamps it and returns it along with the total song duration in ms
+def non_silent(file):
+    audio_segment = AudioSegment.from_file(file)
+    #Normalized -20 dB has given the best results overall but feel free to try any other
+    normalized_audio = match_target_amplitude(audio_segment, -20.0)
+    time = len(normalized_audio)
+    print("Length of audio: {} seconds".format(time/1000))
+    #Change min_silence_len and silence_thresh accordingly for a more precise parse, this is roughly the best values overall
+    nonsilent_data = detect_nonsilent(normalized_audio, min_silence_len=500, silence_thresh=-27, seek_step=1)
+    print("Audio timestamps processed!")
+    return  nonsilent_data, time
+
+#Creation of the video using the cv2 library and exporting it in mp4 format
+def create_video(folder_path, output_name, timestamps, blank, t_time):
+    base_dir = os.path.realpath(folder_path)
+    file_name = output_name
+    print(base_dir)
+    index_timestamps = 0
+    counter = 0
+    img_counter = 0
     file_list = glob.glob(base_dir + '/*.jpg')
     frame_array = []
-    for i in file_list:
-        img = cv2.imread(i)
-        img=cv2.resize(img, (720,480))
-        h,w,l = img.shape
-        size = (w,h)
-
-        for k in range(1):
-            frame_array.append(img)
-    out = cv2.VideoWriter(file_name, cv2.VideoWriter_fourcc(*'mp4v'), 2, size)
+    while img_counter <= len(file_list)-1 and counter < t_time:
+        if(counter >= timestamps[index_timestamps][0] and counter <= timestamps[index_timestamps][1]):
+            img = cv2.imread(file_list[img_counter])
+            img=cv2.resize(img, (720,480))
+            h,w,l = img.shape
+            size = (w,h)
+            times_img = 0
+            img_counter+=1
+            while(counter >= timestamps[index_timestamps][0] and counter <= timestamps[index_timestamps][1]) and (times_img < random.randint(2,5)):
+                frame_array.append(img)
+                counter+=100
+                times_img+=1
+            if not(counter >= timestamps[index_timestamps][0] and counter <= timestamps[index_timestamps][1]):
+                if(index_timestamps < len(timestamps)-1):
+                    index_timestamps+=1
+        else:
+            img = cv2.imread(blank)
+            img=cv2.resize(img, (720,480))
+            h,w,l = img.shape
+            size = (w,h)
+            gc.collect()
+            while not(counter >= timestamps[index_timestamps][0] and counter <= timestamps[index_timestamps][1]):
+                frame_array.append(img)
+                counter+=100
+    out = cv2.VideoWriter(file_name, cv2.VideoWriter_fourcc(*'mp4v'), 10, size)
     for i in range(len(frame_array)):
         out.write(frame_array[i])
     out.release()
     print(f"Video exported to {file_name}")
 
 def main():
-    check_files(folder_name, ydl_opts['outtmpl'])
     #check for internet connection function later
+    
     song_name = input("Song name: ")
+    out_file = input("File name for video: ")
+    out_file += ".mp4"
+    video_file = keyword_out_file + out_file
+    check_files(folder_name, ydl_opts['outtmpl'], out_file, video_file)
+
     lyrics_complete = get_lyric(search_lyric(song_name, URL_Musix, URL_Youtube_Google, ydl_opts))
+    non_silent_audio_timestamps, time = non_silent(ydl_opts["outtmpl"])
     count = 1
     total_count = len(lyrics_complete)
     for word in lyrics_complete:
         print(f"[{count}/{total_count}]", end=" ")
-        count+=1
         search_and_download(folder_name, URL_Google, word, tag_tree_google_img, count)
-    create_video(folder_name, input("File name (without extension): "))
+        count+=1
+    blank_img = folder_name + "IMG_{0:04d}".format(count+1) + ".jpg"
+    search_and_download(folder_name, URL_Google, "black screen", tag_tree_google_img, count+1)
+    create_video(folder_name, out_file, non_silent_audio_timestamps, blank_img, time)
+    
+    ffmpeg.concat(ffmpeg.input(out_file), ffmpeg.input(ydl_opts["outtmpl"]), v=1,a=1).output(video_file).run()
+    print(f"All processes done, video saved under {video_file}")
 
 if __name__ == "__main__":
     main()
