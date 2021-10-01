@@ -15,5 +15,6 @@ The requiered libraries that most likely you would need to download are:
 Feel free to give any feedback and/or issues.
 Note : It works better with songs that don't have a lot of instruments going on the background.
 
-```python:butItsGoogleImages.py
+```python
+# butItsGoogleImages.py
 ```
